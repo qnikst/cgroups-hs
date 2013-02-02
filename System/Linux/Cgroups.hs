@@ -27,7 +27,7 @@ module System.Linux.Cgroups
   , getProcs
   , getProcs'
   -- * controllers
-  , subMemory,subDevices,subFreezer,subBlkio,subCpuSet
+  , subDevices,subFreezer,subBlkio,subCpuSet
   , module EXP
   ) where
 
@@ -45,6 +45,7 @@ import System.Linux.Cgroups.Types
 -- export modules
 import System.Linux.Cgroups.Subsystem.Cpu     as EXP
 import System.Linux.Cgroups.Subsystem.CpuAcct as EXP
+import System.Linux.Cgroups.Subsystem.Memory  as EXP
 
 -- | Check if cgroups is supported by kernel
 cgroupsSupported :: IO Bool
@@ -128,8 +129,7 @@ getProcs' = int_from "cgroup.procs"
 int_from f (Hierarchy _ p) = map read . lines <$> readTextFile (unCgroup p F.</> "tasks") 
 
 
-subMemory,subDevices,subFreezer,subBlkio,subCpuSet :: Subsystem
-subMemory = Controller "memory"
+subDevices,subFreezer,subBlkio,subCpuSet :: Subsystem
 subDevices = Controller "devices"
 subFreezer = Controller "freezer"
 subBlkio = Controller "blkio"

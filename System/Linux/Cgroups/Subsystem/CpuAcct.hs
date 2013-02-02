@@ -58,21 +58,12 @@ instance CgroupValue CpuStat where
 instance CgroupRead CpuStat where
   unprint = fromLines specCpuSet
 
-type Spec a = (Text, a -> [Text] -> a)
 
 specCpuSet :: [Spec CpuStat]
 specCpuSet = [ ("user", \x (l:_) -> x{cpuStatUser = read l})
              , ("system", \x (l:_) -> x{cpuStatSystem = read l})
              ]
 
-fromLines :: (Default a) => [Spec a] -> Text -> a
-fromLines spec = go def spec . (map words) . lines
-  where 
-    go x _  [] = x
-    go x [] (l:ls) = go x spec ls
-    go x _  ([l]:ls) = go x spec ls
-    go x (s@(sn,f):sx) l@((ln:lv):ls) | sn == ln = go (f x lv) spec ls
-                                      | otherwise = go x sx l
 
 -- | cpuacct.usage gives the CPU time (in nanoseconds) obtained
 -- by this group which is essentially the CPU time obtained by all the tasks

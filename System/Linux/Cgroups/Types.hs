@@ -4,6 +4,7 @@ module System.Linux.Cgroups.Types
     Cgroup(..)
   , Subsystem(..)
   , Hierarchy(..)
+  , Spec
     -- * classes
   , CgroupValue(..)
   , CgroupRead(..)
@@ -12,11 +13,14 @@ module System.Linux.Cgroups.Types
   , Relative
   , Absolute
     -- * functions
+  , isNamed
   , mntName
+  , fromLines
   )
   where
 
 import BasicPrelude
+import Data.Default
 import Filesystem
 import qualified Filesystem.Path.CurrentOS as F
 
@@ -79,3 +83,14 @@ class (CgroupValue a, CgroupRead a) => CgroupBox a where
   -- default realizations
   set (Hierarchy _ (Cgroup f)) v = writeTextFile (f </> (F.fromText . mntName $! subsystem v) <.> (param v)) (pprint v)
   modify f h = get h >>= set h . f
+
+type Spec a = (Text, a -> [Text] -> a)
+
+fromLines :: (Default a) => [Spec a] -> Text -> a
+fromLines spec = go def spec . (map words) . lines
+  where 
+    go x _  [] = x
+    go x [] (l:ls) = go x spec ls
+    go x _  ([l]:ls) = go x spec ls
+    go x (s@(sn,f):sx) l@((ln:lv):ls) | sn == ln = go (f x lv) spec ls
+                                      | otherwise = go x sx l
