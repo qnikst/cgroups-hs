@@ -17,6 +17,7 @@
 --   *  It is theoretically possible to see wrong values for user and system times.
 --      This is because percpu_counter_read() on 32bit systems isn't safe
 --      against concurrent writes.
+--
 --   *  It is possible to see slightly outdated values for user and system times
 --       due to the batch processing nature of percpu_counter.
 --
@@ -78,7 +79,8 @@ instance CgroupValue CpuUsage where
 instance CgroupRead CpuUsage where
   unprint     = CpuUsage . read
 
-newtype CpuUsagePerCpu = CpuUsagePerCpu {unCpuUsagePerCpu :: [Int64]}
+newtype CpuUsagePerCpu = CpuUsagePerCpu {unCpuUsagePerCpu :: [Int64]} 
+                      deriving (Eq, Show)
 
 instance CgroupValue CpuUsagePerCpu where
   subsystem _ = subCpuAcct

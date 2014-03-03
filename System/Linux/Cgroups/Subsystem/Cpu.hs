@@ -1,6 +1,12 @@
-{-# LANGUAGE OverloadedStrings #-}
+-- | Module: System.Linux.Cgroups.Subsystem.Cpu
+--   License: BSD
+--   Author: Alexander Vershilov <alexander.vershilov@gmail.com>
+--
+--   Cpu controller:
+--    <http://www.kernel.org/doc/Documentation/cgroups/cgroups.txt>
 module System.Linux.Cgroups.Subsystem.Cpu 
   ( subCpu
+  -- * Cgroup Values
   , Share(..)
   ) where
 
@@ -12,7 +18,7 @@ subCpu = Controller "cpu"
 
 -- | Cpu share describle percentage of processor time can be
 -- taken by process
-newtype Share = Share { unShare :: Int} deriving (Read, Show, Eq)
+newtype Share = Share {unShare :: Int} deriving (Read, Show, Eq)
 
 instance CgroupValue Share where
   subsystem _ = subCpu
@@ -27,6 +33,3 @@ instance CgroupBox Share where
 instance Default Share where
   def = Share 1024
  
-
-
-

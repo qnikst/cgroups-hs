@@ -1,4 +1,4 @@
-{-# LANGUAGE EmptyDataDecls #-}
+{-# LANGUAGE EmptyDataDecls, FlexibleInstances #-}
 module System.Linux.Cgroups.Types
   ( -- * datatypes
     Cgroup(..)
@@ -6,9 +6,11 @@ module System.Linux.Cgroups.Types
   , Hierarchy(..)
   , Spec
     -- * classes
+  , HasCgroup(..)
   , CgroupValue(..)
   , CgroupRead(..)
   , CgroupBox(..)
+  , TextSerial(..)
     -- * helper datatypes
   , Relative
   , Absolute
@@ -21,6 +23,7 @@ module System.Linux.Cgroups.Types
 
 import BasicPrelude
 import Data.Default
+import Data.Text (Text)
 import Filesystem
 import qualified Filesystem.Path.CurrentOS as F
 
@@ -58,9 +61,27 @@ data Hierarchy a = Hierarchy Subsystem (Cgroup a)
                  deriving (Eq, Show)
 
 
+class HasCgroup a where
+  cgroup :: a -> FilePath
+  acgroup :: a -> FilePath -> a
+
+instance HasCgroup (Cgroup Absolute) where
+  cgroup (Cgroup f) = f
+  acgroup (Cgroup _) g = Cgroup g
+
+instance HasCgroup (Hierarchy Absolute) where
+  cgroup (Hierarchy _ (Cgroup f)) = f
+  acgroup (Hierarchy x _) g = Hierarchy x (Cgroup g)
+
 class CgroupValue a where
   subsystem :: a -> Subsystem
   param :: a -> Text
+
+
+class TextSerial a where
+  tencode :: a -> Text
+  tdecode :: Text -> a
+
 
 class (CgroupValue a) => CgroupRead a where
   unprint :: Text -> a

@@ -1,0 +1,11 @@
+[+] cpu
+[+] cpuacct
+[+] devices
+[ ] blkio
+[ ] cpuset
+[~] memory
+[ ] freezer
+[ ] Collect devices major minor numbers by their name (stat?)
+[ ] perf_event
+
+

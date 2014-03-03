@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
+-- | Cgroup support basic managing of linux cgroup controllers
+--
 module System.Linux.Cgroups
   ( cgroupsSupported
   -- * Find cgroup utilities
@@ -7,27 +9,34 @@ module System.Linux.Cgroups
   --, procCgroups
   --, selfCgroups
   -- * Lookup functions
+  -- $lookup
+  -- ** lookup subsystems
   , lookupSubsystemRoot
   , lookupSubsystemSelf
   --, lookupProcRoot
   --, lookupSelfRoot
-  -- ** unsafe creation
+  -- ** Unsafe creation
   , unsafeSubsystemRoot
-  -- * cgroup manipulation
-  -- ** cgroup
+  -- ** Cgroup movement
+  -- *** creation
+  , unsafeCgroup
+  -- *** appending
   , (</>)
   , (<//>)
-  -- ** creating and moving processes
+  -- * Cgroup manipulation
+  , tasksFile
+  -- $cgroup_files
+  -- ** Creating and moving processes
   , mkCgroup
   , moveTasksTo
   , moveProcsTo
-  -- ** getters
+  -- ** Getters
   , getTasks
   , getTasks'
   , getProcs
   , getProcs'
-  -- * controllers
-  , subDevices,subFreezer,subBlkio,subCpuSet
+  -- * Controllers
+  , subFreezer,subBlkio,subCpuSet
   , module EXP
   ) where
 
@@ -46,6 +55,7 @@ import System.Linux.Cgroups.Types
 import System.Linux.Cgroups.Subsystem.Cpu     as EXP
 import System.Linux.Cgroups.Subsystem.CpuAcct as EXP
 import System.Linux.Cgroups.Subsystem.Memory  as EXP
+import System.Linux.Cgroups.Subsystem.Devices as EXP
 
 -- | Check if cgroups is supported by kernel
 cgroupsSupported :: IO Bool
@@ -67,8 +77,8 @@ lookupCgroupRoot = do
 -- procCgroups = do
 --   readFile ("/proc" </> (fromText . show $ pid) </> "cgroup")
 
--- | Find a root for cgroup @subsystem@
--- Internaly uses read of /proc/mounts
+-- | Find a root for cgroup 'Subsystem'
+-- Internaly uses read of \/proc\/mounts
 lookupSubsystemRoot :: Subsystem -> IO (Maybe (Hierarchy Absolute))
 lookupSubsystemRoot name = do
   x <- matchMounts (on1st $ (==) (mntName name))
@@ -76,14 +86,17 @@ lookupSubsystemRoot name = do
     Nothing -> return Nothing
     Just ys -> return $ Hierarchy name <$> (Cgroup . fromText) <$> ith 1 ys
 
--- | Manually set subsystem root
+-- | Manually set 'Subsystem's root
 unsafeSubsystemRoot :: Subsystem -> FilePath -> Hierarchy Absolute
 unsafeSubsystemRoot name fp = Hierarchy name (Cgroup fp)
-  {- absolute fp ?? -}
 
--- lookupProcRoot :: SubmoduleName -> IO (Maybe Submodule)
 
--- | lookup subsystem root of the current process
+-- | Manually create Cgroup 
+-- May be used to create cgroup value from user input
+unsafeCgroup :: FilePath -> Cgroup Absolute
+unsafeCgroup fp = Cgroup fp
+
+-- | Lookup 'Subsystem' root of the current process
 lookupSubsystemSelf :: Subsystem -> IO (Maybe (Hierarchy Relative))
 lookupSubsystemSelf name = do
   ts <- readTextFile "/proc/self/cgroup"
@@ -94,43 +107,48 @@ lookupSubsystemSelf name = do
 
 {- cgroups movements -}
 
+-- | Append hierarchy to another one
 (</>) :: Hierarchy a -> Text -> Hierarchy a
 (Hierarchy n f) </> t = Hierarchy n (Cgroup $! unCgroup f F.</> fromText t)
 
+-- | Append relative path to absolute one
 (<//>) :: Hierarchy Absolute -> Hierarchy a -> Hierarchy Absolute
 (Hierarchy n (Cgroup f1)) <//> (Hierarchy n2 (Cgroup f2)) | n == n2 = Hierarchy n (Cgroup $ f1 F.</> f2)
                                                           | otherwise = error "submodule doesn't match"
 
 -- | Create new cgroup
 -- TODO: fix text value
-mkCgroup :: Hierarchy Absolute -> Text -> IO (Hierarchy Absolute)
-mkCgroup (Hierarchy n p) t = do
+mkCgroup :: (HasCgroup a) =>  a -> Text -> IO a
+mkCgroup a t = do
   createDirectory True p'
-  return $ Hierarchy n (Cgroup p')
-  where p' = unCgroup p F.</> fromText t
+  return $ acgroup a p'
+  where p' = cgroup a F.</> fromText t
 
-moveTasksTo :: Hierarchy Absolute -> Int -> IO ()
+-- | move task to specified 'Hierarchy'
+moveTasksTo :: (HasCgroup a) => a -> Int -> IO ()
 moveTasksTo = move_to "tasks"
 
-moveProcsTo :: Hierarchy Absolute -> Int -> IO ()
+-- | move task and all processes in it's group to 'Hierarchy'
+moveProcsTo :: (HasCgroup a) => a -> Int -> IO ()
 moveProcsTo = move_to "cgroup.procs"
 
 {-# INLINE move_to #-}
-move_to f (Hierarchy _ p) t = appendTextFile (unCgroup p F.</> f) (show t)
+move_to :: HasCgroup a => FilePath -> a -> Int -> IO ()
+move_to f a t = appendTextFile (cgroup a F.</> f) (show t)
 
-getTasks, getProcs :: Hierarchy Absolute -> IO (Set Int)
+getTasks, getProcs :: HasCgroup a => a -> IO (Set Int)
 getTasks h = S.fromList <$> getTasks' h
 getProcs h = S.fromList <$> getProcs' h 
-getTasks', getProcs' :: Hierarchy Absolute -> IO [Int]
+getTasks', getProcs' :: HasCgroup a => a -> IO [Int]
 getTasks' = int_from "tasks" 
 getProcs' = int_from "cgroup.procs"
 
 {-# INLINE int_from #-}
-int_from f (Hierarchy _ p) = map read . lines <$> readTextFile (unCgroup p F.</> "tasks") 
+int_from :: HasCgroup a => FilePath -> a -> IO [Int]
+int_from f p = map read . lines <$> readTextFile (cgroup p F.</> "tasks") 
 
 
-subDevices,subFreezer,subBlkio,subCpuSet :: Subsystem
-subDevices = Controller "devices"
+subFreezer,subBlkio,subCpuSet :: Subsystem
 subFreezer = Controller "freezer"
 subBlkio = Controller "blkio"
 subCpuSet = Controller "cpuset"
@@ -160,21 +178,31 @@ cgName :: Subsystem -> Text
 cgName (Controller t) = t
 cgName (Named t) = "name=" ++ t
 
-{-- 
+-- $cgroup_files
 -- Each cgroup is represented by a directory in the cgroup file system
 -- containing the following files describing that cgroup:
-
--- tasks: list of tasks (by PID) attached to that cgroup.  This list
+--
+--  [@tasks@] list of tasks (by PID) attached to that cgroup.  This list
 --     is not guaranteed to be sorted.  Writing a thread ID into this file
 --     moves the thread into this cgroup.
--- cgroup.procs: list of thread group IDs in the cgroup.  This list is
+--
+--  [@cgroup.procs@] list of thread group IDs in the cgroup.  This list is
 --     not guaranteed to be sorted or free of duplicate TGIDs, and userspace
 --     should sort/uniquify the list if this property is required.
 --     Writing a thread group ID into this file moves all threads in that
 --     group into this cgroup.
--- notify_on_release flag: run the release agent on exit?
--- release_agent: the path to use for release notifications (this file
+--
+-- [@notify_on_release@] flag: run the release agent on exit?
+--
+-- [@release_agent@] the path to use for release notifications (this file
 --     exists in the top cgroup only)
---}
+--
 
-
+-- $lookup
+-- Each 'Hierarchy' has it's root that basically is \/sys\/fs\/cgroups
+-- and it's relavite paths that are listed in \/proc\/X\/cgroups
+-- So all Hierarchies are either Absolute or Relative, to perform an action
+-- on cgroup you need to use Absolute path.
+--
+tasksFile :: (HasCgroup a) => a -> FilePath
+tasksFile h = cgroup h F.</> "tasks"
